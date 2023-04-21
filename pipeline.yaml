@@ -1,0 +1,85 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: crear-imagen
+spec:
+  description: |
+    This pipeline clones a git repo, builds a Docker image with Kaniko and
+    pushes it to a registry
+  params:
+  - name: repo-url
+    type: string
+  - name: image-reference
+    type: string
+  workspaces:
+  - name: shared-data
+  - name: shared-data2
+  - name: docker-credentials
+  - name: basic-auth
+  tasks:
+  - name: descargar-repositorio
+    taskRef:
+      name: git-clone
+    workspaces:
+    - name: output
+      workspace: shared-data
+    params:
+    - name: url
+      value: $(params.repo-url)
+  - name: codversion
+    runAfter: ["descargar-repositorio"]
+    taskRef:
+      kind: task
+      name: codversion
+    workspaces:
+    - name: source
+      workspace: shared-data
+    params:
+    - name: IMAGE
+      value: $(params.image-reference)
+  - name: construir-imagen
+    runAfter: ["codversion"]
+    taskRef:
+      name: kaniko
+    workspaces:
+    - name: source
+      workspace: shared-data
+    - name: dockerconfig
+      workspace: docker-credentials
+    params:
+    - name: IMAGE
+      value: "$(tasks.codversion.results.version)"
+#  - name: git-push
+#    taskRef:
+#      name: git-cli
+#      params:
+#      - name: GIT_SCRIPT
+#        value: |
+#          #!/usr/bin/env sh
+#          VERSION=$(tasks.codversion.results.version)
+#          git clone git@github.com:robertorodriguez98/argocd1.git
+#          cd argocd1/manifests/
+#          git config --global user.name "Roberto Rodriguez Marquez"
+#          git config --global user.email "robertorodriguezmarquez98@gmail.com"
+#          git checkout merger
+#          sed -ri "s/robertorm\/pruebatekton:.*$/robertorm\/pruebatekton:$VERSION/g" deploy.yaml
+#          git commit --allow-empty -m "nueva version de la imagen"
+#          git push origin merger
+#    workspaces:
+#    - name: basic-auth
+#      workspace: basic-auth
+#    - name: source
+#      workspace: shared-data
+  - name: cambiar-version
+    runAfter: ["construir-imagen"]
+    taskRef:
+      kind: task
+      name: cambiar-version
+    workspaces:
+    - name: source
+      workspace: shared-data2
+    - name: basic-auth
+      workspace: basic-auth
+    params:
+    - name: IMAGE
+      value: "$(tasks.codversion.results.version)"

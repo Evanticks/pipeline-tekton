@@ -1,0 +1,82 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: codversion
+spec:
+  results:
+    - name: version
+      description: la nueva version de la imagen
+  params:
+    - name: IMAGE
+      description: la imagen a construir
+      type: string
+  steps:
+    - name: crear-codigo
+      image: alpine/git:latest
+      script: |
+        #!/usr/bin/env sh
+        git config --global --add safe.directory '*'
+        codversion=$(git rev-parse --short HEAD)    
+        ls
+        echo -n $IMAGE:$codversion | tee $(results.version.path)
+      args:
+        - echo
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: IMAGE
+          value: $(params.IMAGE)
+  workspaces:
+    - name: source
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: cambiar-version
+spec:
+  params:
+    - name: IMAGE
+      description: la imagen a construir
+      type: string
+    - name: USER_HOME
+      description: |
+        Absolute path to the user's home directory. Set this explicitly if you are running the image as a non-root user or have overridden
+        the gitInitImage param with an image containing custom user configuration.
+      type: string
+      default: "/root"
+  steps:
+    - name: cambiar-version
+      image: alpine/git:latest
+      script: |
+        #!/usr/bin/env sh
+        # De la imagen git-cli
+        cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.git-credentials" "${PARAM_USER_HOME}/.git-credentials"
+        cp "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/.gitconfig" "${PARAM_USER_HOME}/.gitconfig"
+        chmod 400 "${PARAM_USER_HOME}/.git-credentials"
+        chmod 400 "${PARAM_USER_HOME}/.gitconfig"
+        # Mio
+        VERSION=$IMAGE
+        echo $VERSION
+        #VERSION=$(echo "$IMAGE" | tr '/' '\/')
+        git clone https://github.com/robertorodriguez98/argocd1
+        cd argocd1
+        ls
+        git config --global user.name "Roberto Rodriguez Marquez"
+        git config --global user.email "robertorodriguezmarquez98@gmail.com"
+        sed -ri "s#robertorm/pruebatekton:.*#$VERSION#g" manifests/deploy.yaml
+        cat manifests/deploy.yaml | egrep "robertorm"
+        git add *
+        git commit --allow-empty -m "nueva version de la imagen"
+        git push origin main
+      args:
+        - echo
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: IMAGE
+          value: $(params.IMAGE)
+        - name: PARAM_USER_HOME
+          value: $(params.USER_HOME)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
+  workspaces:
+    - name: source
+    - name: basic-auth
